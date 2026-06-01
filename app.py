@@ -7,10 +7,10 @@ from starlette.requests import Request
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 
+import bcrypt
 import models
 from config import settings
 from models import get_db, User, Task, UserRole
@@ -22,8 +22,7 @@ app = FastAPI(title="Primetrade Intern API", version="1.0.0")
 # Setup template rendering
 templates = Jinja2Templates(directory="templates")
 
-# Password Hashing & Security Guards
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Security Guards
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 # --- Pydantic Data Validation Schemas ---
@@ -54,12 +53,17 @@ class TaskResponse(BaseModel):
     created_at: datetime
     class Config: from_attributes = True
 
-# --- Authentication Helpers ---
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+# --- Authentication Helpers (Updated for Python 3.13 Native Bcrypt Compatibility) ---
+def get_password_hash(password: str) -> str:
+    pwd_bytes = password.encode('utf-8')
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(pwd_bytes, salt)
+    return hashed.decode('utf-8')
 
-def get_password_hash(password):
-    return pwd_context.hash(password)
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    password_bytes = plain_password.encode('utf-8')
+    hashed_bytes = hashed_password.encode('utf-8')
+    return bcrypt.checkpw(password_bytes, hashed_bytes)
 
 def create_access_token(data: dict):
     to_encode = data.copy()
@@ -97,7 +101,7 @@ def require_admin(current_user: User = Depends(get_current_user)):
 # --- FRONTEND ROUTE ---
 @app.get("/", response_class=HTMLResponse)
 def serve_frontend(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html", {"request": request})
 
 # --- BACKEND REST API ENDPOINTS ---
 
